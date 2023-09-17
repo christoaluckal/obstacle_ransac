@@ -100,7 +100,7 @@ class RansacNode():
         total_points = len(l_points)
         trials = 20
         inlier_threshold = 0.1
-        min_points = 95/100
+        min_points = 99/100
         # vals = {'pivot1':[],'pivot2':[],'inliersx':[],'inliersy':[],'count':0}
         binned_points = 0
         line_list = []
@@ -146,12 +146,13 @@ class RansacNode():
             max_dist = 0
             p1 = new_points[0]
             p2 = new_points[-1]
+
             # for _ in range(trials):
                 
             #     pivots = sample(new_points,2)
             #     pivot_1 = pivots[0]
             #     pivot_2 = pivots[1]
-            #     test_dist = eucl(pivot_1[0],pivot_1[1],pivot_2[0],pivot_2[1])
+            #     test_dist = self.eucl(pivot_1[0],pivot_1[1],pivot_2[0],pivot_2[1])
             #     if(test_dist>max_dist):
             #         max_dist=test_dist
             #         p1 = pivot_1
@@ -171,16 +172,27 @@ if __name__ == '__main__':
         
         if node.cartesian_points is not None:
             try:
-                start = time.time()
-                lines = node.ransac(node.cartesian_points)
-                print("CUSTOM:",time.time()-start)
-                print(lines)
+                # start = time.time()
+                # lines = node.ransac(node.cartesian_points)
+                # print("CUSTOM:",time.time()-start)
+                # print(lines)
                 
-                start = time.time()
-                lines_sk = node.compute_lines_sk(node.cartesian_points)
-                print("SKLEARN:",time.time()-start)
-                print(lines_sk)
-                print('\n')
+                # start = time.time()
+                # lines_sk = node.compute_lines_sk(node.cartesian_points)
+                # print("SKLEARN:",time.time()-start)
+                # print(lines_sk)
+                # print('\n')
+
+                lines = node.ransac(node.cartesian_points)
+                for line in lines:
+                    plt.plot([line[0][0],line[1][0]],[line[0][1],line[1][1]],'r',linewidth=2)
+
+                plt.scatter(node.cartesian_points[:,0],node.cartesian_points[:,1],s=0.5)
+
+                plt.draw()
+                plt.pause(0.0001)
+                plt.clf()
+
             except Exception as e:
                 print(e)
 
