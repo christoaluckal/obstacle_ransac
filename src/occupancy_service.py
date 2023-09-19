@@ -120,7 +120,7 @@ class OccupancyNode():
         occupancy_grid_msg.info.origin.orientation.w = 1
         occupancy_grid_msg.data = dilated_occupancy_grid.flatten().tolist()
 
-        return localmapResponse(occupancy_grid_msg)
+        return occupancy_grid_msg
 
 
     def scan_callback(self, msg):
