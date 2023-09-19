@@ -1,0 +1,4 @@
+<launch>
+  <node name="occupancy_node" pkg="obstacle_ransac" type="occupancy.py" output="screen" />
+  <rosparam command="load" file="$(find obstacle_ransac)/params/occupancy.yaml" />
+</launch>

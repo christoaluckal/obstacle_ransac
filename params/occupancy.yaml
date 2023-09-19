@@ -1,0 +1,3 @@
+max_distance: 10
+map_resolution: 0.01
+scan_topic: '/car_1/scan'
