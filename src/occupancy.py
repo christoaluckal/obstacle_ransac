@@ -12,7 +12,7 @@ from scipy import ndimage
 
 class OccupancyNode():
     def __init__(self):
-        rospy.init_node('occupancy_node', anonymous=True)
+        rospy.init_node('local_occupancy_node', anonymous=True)
         try:
             self.sub = rospy.Subscriber(rosparam.get_param('scan_topic'), LaserScan, self.scan_callback)
         except:
@@ -36,7 +36,7 @@ class OccupancyNode():
         }
 
         self.occupancy_grid = np.zeros((int(self.map_attributes['height']),int(self.map_attributes['width'])),dtype=np.int8)
-        self.occupancy_grid_pub = rospy.Publisher('/occupancy_grid', OccupancyGrid, queue_size=10)
+        self.occupancy_grid_pub = rospy.Publisher('/local_grid', OccupancyGrid, queue_size=1)
 
     def xy_to_cell_idx(self,coords):
         x = coords[0]
@@ -65,19 +65,20 @@ class OccupancyNode():
         y = (self.map_attributes['height']-map_y)*self.map_resolution-self.max_distance
         return [x,y]
 
-    def scan_callback(self, msg):
+    def scan_callback(self, msg:LaserScan):
         if self.curr_pose is None:
             return
-        self.inlier_list = []
+        theta = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
+
         valid_mask = [np.array(msg.ranges) < self.max_distance]
         polar = np.array(msg.ranges)[tuple(valid_mask)]
-        theta = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
         theta = theta[tuple(valid_mask)]
-        self.resolution = msg.angle_increment
+        
+        # polar = np.clip(np.array(msg.ranges),0,msg.range_max)
 
         # Convert to cartesian
-        x = np.round(polar * np.cos(theta),6)
-        y = np.round(polar * np.sin(theta),6)
+        x = polar * np.cos(theta)
+        y = polar * np.sin(theta)
         self.cartesian_points = np.vstack((x, y)).T
 
         # Convert to map coordinates
@@ -87,12 +88,15 @@ class OccupancyNode():
         # self.clear_occupancy_grid()
 
         for point in map_idxs:
-            self.occupancy_grid[point[0],point[1]] = 100
+            self.occupancy_grid[point[0],point[1]] = 1
 
         # Apply dilation
-        # kernel = np.ones((3,3),np.uint8)
-        # self.occupancy_grid = ndimage.binary_dilation(self.occupancy_grid,structure=kernel).astype(self.occupancy_grid.dtype)
+        kernel = np.ones((3,3),np.uint8)
+        dilated_occupancy_grid = ndimage.binary_dilation(self.occupancy_grid,structure=kernel).astype(self.occupancy_grid.dtype)
         # Publish occupancy grid
+
+        dilated_occupancy_grid*=100
+
         occupancy_grid_msg = OccupancyGrid()
         occupancy_grid_msg.header.stamp = rospy.Time.now()
         occupancy_grid_msg.header.frame_id = 'car_1_base_link'
@@ -106,10 +110,12 @@ class OccupancyNode():
         occupancy_grid_msg.info.origin.orientation.y = 0
         occupancy_grid_msg.info.origin.orientation.z = 0
         occupancy_grid_msg.info.origin.orientation.w = 1
-        occupancy_grid_msg.data = self.occupancy_grid.flatten().tolist()
+        occupancy_grid_msg.data = dilated_occupancy_grid.flatten().tolist()
 
         # print(type(occupancy_grid_msg.data))
         self.occupancy_grid_pub.publish(occupancy_grid_msg)
+
+        
 
         self.clear_occupancy_grid()
 
@@ -130,15 +136,14 @@ class OccupancyNode():
     
 if __name__ == '__main__':
     node = OccupancyNode()
-    rate = rospy.Rate(10)
+    rate = rospy.Rate(20)
     while not rospy.is_shutdown():
         if node.cartesian_points is not None:
             try:
-                print("Running")
-
+                rospy.loginfo(math.degrees(node.curr_heading))
             except Exception as e:
                 print(e)
-
+            
         else:
             print("EMPTY")
         rate.sleep()
