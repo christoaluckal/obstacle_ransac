@@ -78,11 +78,11 @@ class OccupancyNode():
         
         theta = np.linspace(self.curr_scan.angle_min, self.curr_scan.angle_max, len(self.curr_scan.ranges))
 
-        valid_mask = [np.array(self.curr_scan.ranges) < self.max_distance]
-        polar = np.array(self.curr_scan.ranges)[tuple(valid_mask)]
-        theta = theta[tuple(valid_mask)]
+        # valid_mask = [np.array(self.curr_scan.ranges) < self.max_distance]
+        # polar = np.array(self.curr_scan.ranges)[tuple(valid_mask)]
+        # theta = theta[tuple(valid_mask)]
         
-        # polar = np.clip(np.array(msg.ranges),0,msg.range_max)
+        polar = np.clip(np.array(self.curr_scan.ranges,dtype=np.float32),0,100)
 
         # Convert to cartesian
         x = polar * np.cos(theta)
@@ -99,15 +99,18 @@ class OccupancyNode():
             self.occupancy_grid[point[0],point[1]] = 1
 
         # Apply dilation
-        kernel = np.ones((3,3),np.uint8)
-        dilated_occupancy_grid = ndimage.binary_dilation(self.occupancy_grid,structure=kernel).astype(self.occupancy_grid.dtype)
-        # Publish occupancy grid
+        dilate = False
+        if dilate:
+            kernel = np.ones((1,1),np.uint8)
+            dilated_occupancy_grid = ndimage.binary_dilation(self.occupancy_grid,structure=kernel).astype(self.occupancy_grid.dtype)
+        else:
+            dilated_occupancy_grid = self.occupancy_grid.copy()
 
         dilated_occupancy_grid*=100
 
         occupancy_grid_msg = OccupancyGrid()
         occupancy_grid_msg.header.stamp = rospy.Time.now()
-        occupancy_grid_msg.header.frame_id = 'car_1_base_link'
+        occupancy_grid_msg.header.frame_id = 'car_1_laser'
         occupancy_grid_msg.info.resolution = self.map_resolution
         occupancy_grid_msg.info.width = int(self.map_attributes['width'])
         occupancy_grid_msg.info.height = int(self.map_attributes['height'])
