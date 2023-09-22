@@ -1,8 +1,10 @@
 max_distance: 5
-trbl: [2,5,2,1]
+trbl: [2,10,2,1]
+custom_size: True
 map_resolution: 0.01
 scan_topic: '/car_1/scan'
 odom_topic: '/car_1/base/odom'
 service_name: 'localmap'
 dilation: True
 dilation_kernel: 21
+minfilter_kernel: 3
