@@ -5,7 +5,7 @@ map_resolution: 0.01
 scan_topic: '/car_1/scan'
 odom_topic: '/car_1/base/odom'
 service_name: 'localmap'
-dilation: True
+dilation: False
 dilation_kernel: 21
 minfilter_kernel: 3
 car_radius: 0.6

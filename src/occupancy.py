@@ -55,7 +55,7 @@ def bres(p1,p2):
 
 class OccupancyNode():
     def __init__(self):
-        rospy.init_node('local_occupancy_node', anonymous=True)
+        
         try:
             self.sub = rospy.Subscriber(rosparam.get_param('scan_topic'), LaserScan, self.scan_callback)
         except:
@@ -103,7 +103,7 @@ class OccupancyNode():
             
         print(self.map_attributes)
 
-        self.occupancy_grid_pub = rospy.Publisher('/local_grid', OccupancyGrid, queue_size=1)
+        self.occupancy_grid_pub = rospy.Publisher('/local_grid', OccupancyGrid, queue_size=0)
 
 
     def xy_to_cell_idx(self,coords):
@@ -122,13 +122,52 @@ class OccupancyNode():
             map_x = int((x-self.map_attributes['tl_coord'][0])/self.map_resolution)
 
 
-            map_y = -int((self.map_attributes['tl_coord'][1]-y)/self.map_resolution)
+            map_y = self.map_attributes['height']-int((self.map_attributes['tl_coord'][1]-y)/self.map_resolution)
 
     
         
         return [map_y,map_x]
     
-    
+    def bres(self,p1,p2):
+        (y0, x0) = p1
+        (y1, x1) = p2
+
+        steep = abs(y1 - y0) > abs(x1 - x0)
+        if steep:
+            x0, y0 = y0, x0  
+            x1, y1 = y1, x1
+
+        switched = False
+        if x0 > x1:
+            switched = True
+            x0, x1 = x1, x0
+            y0, y1 = y1, y0
+
+        if y0 < y1: 
+            ystep = 1
+        else:
+            ystep = -1
+
+        deltax = x1 - x0
+        deltay = abs(y1 - y0)
+        error = -deltax / 2
+        y = y0
+
+        line = []    
+
+        for x in range(x0, x1 + 1):
+            if steep:
+                line.append((y,x))
+            else:
+                line.append((x,y))
+
+            error = error + deltay
+            if error > 0:
+                y = y + ystep
+                error = error - deltax
+        if switched:
+            line.reverse()
+        return line
     
     def cell_idx_to_xy(self,map_idx):
         map_y = map_idx[0]
@@ -158,12 +197,12 @@ class OccupancyNode():
         origin_px = self.xy_to_cell_idx([0,0])
         map_idxs = np.array([self.xy_to_cell_idx(point) for point in self.cartesian_points])
 
-        car_radius = int(rosparam.get_param('car_radius')/self.map_resolution)
+        # car_radius = int(rosparam.get_param('car_radius')/self.map_resolution)
 
-        for r in range(-car_radius,car_radius):
-            for c in range(-car_radius,car_radius):
-                if r**2+c**2 <= car_radius**2:
-                    self.occupancy_grid[origin_px[0]+r,origin_px[1]+c] = 0
+        # for r in range(-car_radius,car_radius):
+        #     for c in range(-car_radius,car_radius):
+        #         if r**2+c**2 <= car_radius**2:
+        #             self.occupancy_grid[origin_px[0]+r,origin_px[1]+c] = 0
 
         
 
@@ -171,22 +210,26 @@ class OccupancyNode():
 
         for point in map_idxs:
             try:
-                bres_line = bres(origin_px,point)
-                for point in range(1,len(bres_line)-1):
-                    self.occupancy_grid[bres_line[point][1],bres_line[point][0]] = 0
-                # self.occupancy_grid[point[0],point[1]] = 0
+                bres_line = self.bres(origin_px,point)
+                # for p in range(1,len(bres_line)-1):
+                #     self.occupancy_grid[bres_line[p][1],bres_line[p][0]] = 0
+
+                if point[0] < 0 or point[1] < 0:
+                    continue
+                if point[0] >= self.occupancy_grid.shape[0] or point[1] >= self.occupancy_grid.shape[1]:
+                    continue
+                self.occupancy_grid[point[0],point[1]] = 0
             except:
                 pass
 
         # Apply dilation
+        dilated_occupancy_grid = self.occupancy_grid.copy()
         if rosparam.get_param('dilation'):
             kernel_size = rosparam.get_param('dilation_kernel')
             kernel = np.ones((kernel_size,kernel_size),np.uint8)
             # dilated_occupancy_grid = ndimage.median_filter(self.occupancy_grid,size=kernel_size)
             dilated_occupancy_grid = ndimage.minimum_filter(self.occupancy_grid,size=rosparam.get_param('minfilter_kernel'))
             dilated_occupancy_grid = ndimage.binary_dilation(dilated_occupancy_grid,structure=kernel).astype(self.occupancy_grid.dtype)
-        else:
-            dilated_occupancy_grid = self.occupancy_grid.copy()
 
         dilated_occupancy_grid*=100
 
@@ -236,18 +279,8 @@ class OccupancyNode():
 
     
 if __name__ == '__main__':
+    rospy.init_node('local_occupancy_node', anonymous=True)
     node = OccupancyNode()
+    print(node.xy_to_cell_idx([0,0]))
     rate = rospy.Rate(20)
-    bres([0,0],[1,1])
-    print(node.xy_to_cell_idx([5,-1]))
-    while not rospy.is_shutdown():
-        if node.cartesian_points is not None:
-            try:
-                # rospy.loginfo(math.degrees(node.curr_heading))
-                pass
-            except Exception as e:
-                print(e)
-            
-        else:
-            pass
-        rate.sleep()
+    rospy.spin()
