@@ -1,4 +1,5 @@
 max_distance: 5
+trbl: [2,5,2,1]
 map_resolution: 0.01
 scan_topic: '/car_1/scan'
 odom_topic: '/car_1/base/odom'
