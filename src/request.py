@@ -27,10 +27,6 @@ try:
             
             occupancy_pub.publish(occupancy_msg)
 
-            # Zero out the map
-            occupancy_msg.data = np.zeros(occupancy_msg.data.shape)
-            occupancy_msg.data = occupancy_msg.data.astype(np.int8)
-            occupancy_pub.publish(occupancy_msg)
             # plt.imshow(occupancy_msg.data.reshape(occupancy_msg.info.height,occupancy_msg.info.width))
             # plt.draw()
             # plt.pause(0.001)

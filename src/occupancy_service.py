@@ -11,6 +11,50 @@ import rosparam
 from scipy import ndimage
 # from std_msgs.msg import Int8
 from obstacle_ransac.srv import localmap, localmapResponse
+from numba import jit
+
+@jit(nopython=True)
+def bres(p1,p2,w,h):
+    (y0, x0) = p1
+    (y1, x1) = p2
+
+    steep = abs(y1 - y0) > abs(x1 - x0)
+    if steep:
+        x0, y0 = y0, x0  
+        x1, y1 = y1, x1
+
+    switched = False
+    if x0 > x1:
+        switched = True
+        x0, x1 = x1, x0
+        y0, y1 = y1, y0
+
+    if y0 < y1: 
+        ystep = 1
+    else:
+        ystep = -1
+
+    deltax = x1 - x0
+    deltay = abs(y1 - y0)
+    error = -deltax / 2
+    y = y0
+
+    line = []    
+    for x in range(x0, x1 + 1):
+        if steep:
+            line.append((y,x))
+        else:
+            line.append((x,y))
+            
+
+        error = error + deltay
+        if error > 0:
+            y = y + ystep
+            error = error - deltax
+    if switched:
+        line.reverse()
+    return line
+
 
 class OccupancyNode():
     def __init__(self):
@@ -83,8 +127,8 @@ class OccupancyNode():
 
 
             map_y = self.map_attributes['height']-int((self.map_attributes['tl_coord'][1]-y)/self.map_resolution)
-
-        return [map_y,map_x]
+            
+        return [int(map_y),int(map_x)]
     
     def bres(self,p1,p2):
         (y0, x0) = p1
@@ -133,6 +177,7 @@ class OccupancyNode():
         x = map_x*self.map_resolution-self.max_distance
         y = (self.map_attributes['height']-map_y)*self.map_resolution-self.max_distance
         return [x,y]
+    
 
     def local_map_callback(self,data):
 
@@ -145,7 +190,7 @@ class OccupancyNode():
         # polar = np.array(self.curr_scan.ranges)[tuple(valid_mask)]
         # theta = theta[tuple(valid_mask)]
         
-        polar = np.clip(np.array(self.curr_scan.ranges,dtype=np.float32),0,self.curr_scan.range_max)
+        polar = np.clip(np.array(self.curr_scan.ranges,dtype=np.float32),0,20)
 
         # Convert to cartesian
         x = polar * np.cos(theta)
@@ -156,15 +201,30 @@ class OccupancyNode():
         origin_px = self.xy_to_cell_idx([0,0])
         map_idxs = np.array([self.xy_to_cell_idx(point) for point in self.cartesian_points])
 
+        car_radius = int(rosparam.get_param('car_radius')/self.map_resolution)
 
         # self.clear_occupancy_grid()
+        for r in range(-car_radius,car_radius):
+            for c in range(-car_radius,car_radius):
+                if r**2+c**2 <= car_radius**2:
+                    self.occupancy_grid[origin_px[0]+r,origin_px[1]+c] = 0
+
 
         for point in map_idxs:
             try:
-                # bres_line = self.bres(origin_px,point)
-                # for point in range(1,len(bres_line)-1):
-                #     self.occupancy_grid[bres_line[point][1],bres_line[point][0]] = 0
-                self.occupancy_grid[point[0],point[1]] = 0
+                bres_line = bres(origin_px,point,self.map_attributes['width'],self.map_attributes['height'])
+                for p in range(1,len(bres_line)-1):
+                    if bres_line[p][0] < 0 or bres_line[p][1] < 0:
+                        continue
+                    # if bres_line[p][0] >= self.occupancy_grid.shape[0] or bres_line[p][1] >= self.occupancy_grid.shape[1]:
+                    #     continue
+                    self.occupancy_grid[bres_line[p][1],bres_line[p][0]] = 0
+                    
+                if point[0] < 0 or point[1] < 0:
+                    continue
+                if point[0] >= self.occupancy_grid.shape[0] or point[1] >= self.occupancy_grid.shape[1]:
+                    continue
+                self.occupancy_grid[point[0]][point[1]] = 0
             except:
                 pass
 
@@ -200,6 +260,8 @@ class OccupancyNode():
         occupancy_grid_msg.info.origin.orientation.z = 0
         occupancy_grid_msg.info.origin.orientation.w = 1
         occupancy_grid_msg.data = dilated_occupancy_grid.flatten().tolist()
+        
+        self.clear_occupancy_grid()
 
         return occupancy_grid_msg
 

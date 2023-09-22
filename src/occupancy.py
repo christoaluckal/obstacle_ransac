@@ -9,9 +9,10 @@ from random import uniform,sample
 import math
 import rosparam
 from scipy import ndimage
+from skimage import draw
 from numba import jit
 import time
-
+import multiprocessing as mp
 
 @jit(nopython=True)
 def bres(p1,p2,w,h):
@@ -41,13 +42,13 @@ def bres(p1,p2,w,h):
 
     line = []    
     for x in range(x0, x1 + 1):
-        if x > w and x > h:
+        if x > w or x > h:
             continue
         if steep:
             line.append((y,x))
         else:
             line.append((x,y))
-
+            
 
         error = error + deltay
         if error > 0:
@@ -230,8 +231,10 @@ class OccupancyNode():
                     if bres_line[p][0] >= self.occupancy_grid.shape[0] or bres_line[p][1] >= self.occupancy_grid.shape[1]:
                         continue
                     self.occupancy_grid[bres_line[p][1],bres_line[p][0]] = 0
-
-
+                
+                # bres_line = draw.line(origin_px[0],origin_px[1],point[0],point[1])
+                # self.occupancy_grid[bres_line[0],bres_line[1]] = 0
+                
                 # if point[0] < 0 or point[1] < 0:
                 #     continue
                 # if point[0] >= self.occupancy_grid.shape[0] or point[1] >= self.occupancy_grid.shape[1]:
@@ -291,7 +294,7 @@ class OccupancyNode():
         
         self.curr_heading = euler_from_quaternion([self.curr_pose.orientation.x, self.curr_pose.orientation.y, self.curr_pose.orientation.z, self.curr_pose.orientation.w])[2]
         # print(self.curr_heading)
-
+        
 
 
 
