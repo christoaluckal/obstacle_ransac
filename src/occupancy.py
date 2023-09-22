@@ -9,6 +9,49 @@ from random import uniform,sample
 import math
 import rosparam
 from scipy import ndimage
+from numba import jit
+
+
+@jit(nopython=True)
+def bres(p1,p2):
+    (y0, x0) = p1
+    (y1, x1) = p2
+
+    steep = abs(y1 - y0) > abs(x1 - x0)
+    if steep:
+        x0, y0 = y0, x0  
+        x1, y1 = y1, x1
+
+    switched = False
+    if x0 > x1:
+        switched = True
+        x0, x1 = x1, x0
+        y0, y1 = y1, y0
+
+    if y0 < y1: 
+        ystep = 1
+    else:
+        ystep = -1
+
+    deltax = x1 - x0
+    deltay = abs(y1 - y0)
+    error = -deltax / 2
+    y = y0
+
+    line = []    
+    for x in range(x0, x1 + 1):
+        if steep:
+            line.append((y,x))
+        else:
+            line.append((x,y))
+
+        error = error + deltay
+        if error > 0:
+            y = y + ystep
+            error = error - deltax
+    if switched:
+        line.reverse()
+    return line
 
 class OccupancyNode():
     def __init__(self):
@@ -62,6 +105,7 @@ class OccupancyNode():
 
         self.occupancy_grid_pub = rospy.Publisher('/local_grid', OccupancyGrid, queue_size=1)
 
+
     def xy_to_cell_idx(self,coords):
 
         if not self.custom_flag:
@@ -84,45 +128,7 @@ class OccupancyNode():
         
         return [map_y,map_x]
     
-    def bres(self,p1,p2):
-        (y0, x0) = p1
-        (y1, x1) = p2
-
-        steep = abs(y1 - y0) > abs(x1 - x0)
-        if steep:
-            x0, y0 = y0, x0  
-            x1, y1 = y1, x1
-
-        switched = False
-        if x0 > x1:
-            switched = True
-            x0, x1 = x1, x0
-            y0, y1 = y1, y0
-
-        if y0 < y1: 
-            ystep = 1
-        else:
-            ystep = -1
-
-        deltax = x1 - x0
-        deltay = abs(y1 - y0)
-        error = -deltax / 2
-        y = y0
-
-        line = []    
-        for x in range(x0, x1 + 1):
-            if steep:
-                line.append((y,x))
-            else:
-                line.append((x,y))
-
-            error = error + deltay
-            if error > 0:
-                y = y + ystep
-                error = error - deltax
-        if switched:
-            line.reverse()
-        return line
+    
     
     def cell_idx_to_xy(self,map_idx):
         map_y = map_idx[0]
@@ -152,12 +158,20 @@ class OccupancyNode():
         origin_px = self.xy_to_cell_idx([0,0])
         map_idxs = np.array([self.xy_to_cell_idx(point) for point in self.cartesian_points])
 
+        car_radius = int(rosparam.get_param('car_radius')/self.map_resolution)
+
+        for r in range(-car_radius,car_radius):
+            for c in range(-car_radius,car_radius):
+                if r**2+c**2 <= car_radius**2:
+                    self.occupancy_grid[origin_px[0]+r,origin_px[1]+c] = 0
+
+        
 
         # self.clear_occupancy_grid()
 
         for point in map_idxs:
             try:
-                bres_line = self.bres(origin_px,point)
+                bres_line = bres(origin_px,point)
                 for point in range(1,len(bres_line)-1):
                     self.occupancy_grid[bres_line[point][1],bres_line[point][0]] = 0
                 # self.occupancy_grid[point[0],point[1]] = 0
@@ -224,6 +238,7 @@ class OccupancyNode():
 if __name__ == '__main__':
     node = OccupancyNode()
     rate = rospy.Rate(20)
+    bres([0,0],[1,1])
     print(node.xy_to_cell_idx([5,-1]))
     while not rospy.is_shutdown():
         if node.cartesian_points is not None:
