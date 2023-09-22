@@ -10,10 +10,11 @@ import math
 import rosparam
 from scipy import ndimage
 from numba import jit
+import time
 
 
 @jit(nopython=True)
-def bres(p1,p2):
+def bres(p1,p2,w,h,grid):
     (y0, x0) = p1
     (y1, x1) = p2
 
@@ -40,10 +41,14 @@ def bres(p1,p2):
 
     line = []    
     for x in range(x0, x1 + 1):
+        if x > w and x > h:
+            continue
         if steep:
             line.append((y,x))
         else:
             line.append((x,y))
+
+        
 
         error = error + deltay
         if error > 0:
@@ -104,6 +109,8 @@ class OccupancyNode():
         print(self.map_attributes)
 
         self.occupancy_grid_pub = rospy.Publisher('/local_grid', OccupancyGrid, queue_size=0)
+
+        self.occupancy_grid_msg = OccupancyGrid()
 
 
     def xy_to_cell_idx(self,coords):
@@ -188,8 +195,9 @@ class OccupancyNode():
         polar = np.clip(np.array(msg.ranges,dtype=np.float32),0,msg.range_max)
 
         # Convert to cartesian
-        x = polar * np.cos(theta)
-        y = polar * np.sin(theta)
+        x = np.clip(polar * np.cos(theta),self.map_attributes['tl_coord'][0],msg.range_max)
+        y = np.clip(polar * np.sin(theta),self.map_attributes['br_coord'][1],msg.range_max)
+
         self.cartesian_points = np.vstack((x, y)).T
 
 
@@ -207,20 +215,28 @@ class OccupancyNode():
         
 
         # self.clear_occupancy_grid()
-
+        start = time.time()
         for point in map_idxs:
             try:
-                bres_line = self.bres(origin_px,point)
-                # for p in range(1,len(bres_line)-1):
-                #     self.occupancy_grid[bres_line[p][1],bres_line[p][0]] = 0
+                # print(point)
+                bres_line = bres(origin_px,point,self.map_attributes['width'],self.map_attributes['height'],self.occupancy_grid )
+                for p in range(1,len(bres_line)-1):
+                    # if bres_line[p][0] < 0 or bres_line[p][1] < 0:
+                    #     continue
+                    # if bres_line[p][0] >= self.occupancy_grid.shape[0] or bres_line[p][1] >= self.occupancy_grid.shape[1]:
+                    #     continue
+                    self.occupancy_grid[bres_line[p][1],bres_line[p][0]] = 0
 
-                if point[0] < 0 or point[1] < 0:
-                    continue
-                if point[0] >= self.occupancy_grid.shape[0] or point[1] >= self.occupancy_grid.shape[1]:
-                    continue
+
+                # if point[0] < 0 or point[1] < 0:
+                #     continue
+                # if point[0] >= self.occupancy_grid.shape[0] or point[1] >= self.occupancy_grid.shape[1]:
+                #     continue
                 self.occupancy_grid[point[0],point[1]] = 0
             except:
                 pass
+        end = time.time()
+        print((end-start))
 
         # Apply dilation
         dilated_occupancy_grid = self.occupancy_grid.copy()
@@ -234,30 +250,30 @@ class OccupancyNode():
         dilated_occupancy_grid*=100
 
 
-        occupancy_grid_msg = OccupancyGrid()
-        occupancy_grid_msg.header.stamp = rospy.Time.now()
-        occupancy_grid_msg.header.frame_id = 'car_1_laser'
-        occupancy_grid_msg.info.resolution = self.map_resolution
+        # occupancy_grid_msg = OccupancyGrid()
+        self.occupancy_grid_msg.header.stamp = rospy.Time.now()
+        self.occupancy_grid_msg.header.frame_id = 'car_1_laser'
+        self.occupancy_grid_msg.info.resolution = self.map_resolution
 
-        occupancy_grid_msg.info.width = int(self.map_attributes['width'])
-        occupancy_grid_msg.info.height = int(self.map_attributes['height'])
+        self.occupancy_grid_msg.info.width = int(self.map_attributes['width'])
+        self.occupancy_grid_msg.info.height = int(self.map_attributes['height'])
         if not self.custom_flag:
-            occupancy_grid_msg.info.origin.position.x = -self.max_distance
-            occupancy_grid_msg.info.origin.position.y = -self.max_distance
+            self.occupancy_grid_msg.info.origin.position.x = -self.max_distance
+            self.occupancy_grid_msg.info.origin.position.y = -self.max_distance
 
         else:
-            occupancy_grid_msg.info.origin.position.x = self.map_attributes['origin'][0]
-            occupancy_grid_msg.info.origin.position.y = self.map_attributes['origin'][1]
+            self.occupancy_grid_msg.info.origin.position.x = self.map_attributes['origin'][0]
+            self.occupancy_grid_msg.info.origin.position.y = self.map_attributes['origin'][1]
 
-        occupancy_grid_msg.info.origin.position.z = 0
-        occupancy_grid_msg.info.origin.orientation.x = 0
-        occupancy_grid_msg.info.origin.orientation.y = 0
-        occupancy_grid_msg.info.origin.orientation.z = 0
-        occupancy_grid_msg.info.origin.orientation.w = 1
-        occupancy_grid_msg.data = dilated_occupancy_grid.flatten().tolist()
+        self.occupancy_grid_msg.info.origin.position.z = 0
+        self.occupancy_grid_msg.info.origin.orientation.x = 0
+        self.occupancy_grid_msg.info.origin.orientation.y = 0
+        self.occupancy_grid_msg.info.origin.orientation.z = 0
+        self.occupancy_grid_msg.info.origin.orientation.w = 1
+        self.occupancy_grid_msg.data = dilated_occupancy_grid.flatten().tolist()
 
         # print(type(occupancy_grid_msg.data))
-        self.occupancy_grid_pub.publish(occupancy_grid_msg)
+        self.occupancy_grid_pub.publish(self.occupancy_grid_msg)
 
         
 

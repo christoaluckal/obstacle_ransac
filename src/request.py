@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 dummy_string = String()
 rospy.init_node('repub_node', anonymous=True)
-occupancy_pub = rospy.Publisher('/repub_grid', OccupancyGrid, queue_size=1)
+occupancy_pub = rospy.Publisher('/local_grid', OccupancyGrid, queue_size=1)
 rospy.wait_for_service('localmap')
 lm = rospy.ServiceProxy('localmap', localmap)
 
@@ -25,6 +25,11 @@ try:
             occupancy_msg.data = np.array(occupancy_msg.data)
             time_since = rospy.Time.now()
             
+            occupancy_pub.publish(occupancy_msg)
+
+            # Zero out the map
+            occupancy_msg.data = np.zeros(occupancy_msg.data.shape)
+            occupancy_msg.data = occupancy_msg.data.astype(np.int8)
             occupancy_pub.publish(occupancy_msg)
             # plt.imshow(occupancy_msg.data.reshape(occupancy_msg.info.height,occupancy_msg.info.width))
             # plt.draw()

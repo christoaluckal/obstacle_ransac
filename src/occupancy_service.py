@@ -17,52 +17,72 @@ class OccupancyNode():
         rospy.init_node('occupancy_service', anonymous=True)
         
         try:
-            self.scan_sub = rospy.Subscriber(rosparam.get_param('scan_topic'), LaserScan, self.scan_callback)
+            self.sub = rospy.Subscriber(rosparam.get_param('scan_topic'), LaserScan, self.scan_callback)
         except:
-            self.scan_sub = rospy.Subscriber('/car_1/scan', LaserScan, self.scan_callback)
-        
-        try:
-            self.odom_sub = rospy.Subscriber(rosparam.get_param('odom_topic'), Odometry, self.odom_callback)
-        except:
-            self.odom_sub = rospy.Subscriber('/car_1/base/odom', Odometry, self.odom_callback)
+            self.sub = rospy.Subscriber('/car_1/scan', LaserScan, self.scan_callback)
 
         self.curr_pose = None
         self.curr_scan = None
-
+        self.odom_sub = rospy.Subscriber('/car_1/base/odom', Odometry, self.odom_callback)
+        self.curr_heading = 0
         self.cartesian_points = None
+        self.inlier_list = None
         self.map_resolution = rosparam.get_param('map_resolution')
-        try:
-            self.max_distance = rosparam.get_param('max_distance')
-        except:
-            self.max_distance = 5
 
-        self.map_attributes = {
-            'map_resolution': self.map_resolution,
-            'width': 2*self.max_distance/self.map_resolution,
-            'height': 2*self.max_distance/self.map_resolution,
-        }
+        self.custom_flag = rosparam.get_param('custom_size')
+        if not self.custom_flag:
+            try:
+                self.max_distance = rosparam.get_param('max_distance')
+            except:
+                self.max_distance = 5
 
-        self.occupancy_grid = np.ones((int(self.map_attributes['height']),int(self.map_attributes['width'])),dtype=np.int8)
-        # self.occupancy_grid_pub = rospy.Publisher('/local_grid', OccupancyGrid, queue_size=1)
+            self.map_attributes = {
+                'map_resolution': self.map_resolution,
+                'width': 2*self.max_distance/self.map_resolution,
+                'height': 2*self.max_distance/self.map_resolution,
+            }
+            self.occupancy_grid = np.ones((int(self.map_attributes['height']),int(self.map_attributes['width'])),dtype=np.int8)
+
+        else:
+            top = rosparam.get_param('trbl')[0]
+            right = rosparam.get_param('trbl')[1]
+            bottom = rosparam.get_param('trbl')[2]
+            left = rosparam.get_param('trbl')[3]
+
+            tl_coord = [-left,top]
+            br_coord = [right,-bottom]
+
+            self.map_attributes = {
+                'map_resolution': self.map_resolution,
+                'width': int((br_coord[0]-tl_coord[0])/self.map_resolution),
+                'height': int((tl_coord[1]-br_coord[1])/self.map_resolution),
+                'tl_coord': tl_coord,
+                'br_coord': br_coord,
+                'origin': [-left,-bottom]
+            }
+            self.occupancy_grid = np.ones((int(self.map_attributes['height']),int(self.map_attributes['width'])),dtype=np.int8)
+            
+        print(self.map_attributes)
+
         
         self.occupancy_service = rospy.Service(rosparam.get_param('service_name'), localmap, self.local_map_callback)
 
     def xy_to_cell_idx(self,coords):
-        x = coords[0]
-        y = coords[1]
-        map_x = int((x+self.max_distance)/self.map_resolution)
+        if not self.custom_flag:
+            x = coords[0]
+            y = coords[1]
+            map_x = int((x+self.max_distance)/self.map_resolution)
 
-        # if map_x >= self.map_attributes['width']:
-        #     map_x = int(self.map_attributes['width']-1)
-        # if map_x < 0:
-        #     map_x = 0
 
-        map_y = int(((y+self.max_distance)/self.map_resolution))
+            map_y = int(((y+self.max_distance)/self.map_resolution))
 
-        # if map_y >= self.map_attributes['height']:
-        #     map_y = int(self.map_attributes['height']-1)
-        # if map_y < 0:
-        #     map_y = 0
+        else:
+            x = coords[0]
+            y = coords[1]
+            map_x = int((x-self.map_attributes['tl_coord'][0])/self.map_resolution)
+
+
+            map_y = self.map_attributes['height']-int((self.map_attributes['tl_coord'][1]-y)/self.map_resolution)
 
         return [map_y,map_x]
     
@@ -141,23 +161,21 @@ class OccupancyNode():
 
         for point in map_idxs:
             try:
-                bres_line = self.bres(origin_px,point)
-                for point in range(1,len(bres_line)-1):
-                    self.occupancy_grid[bres_line[point][1],bres_line[point][0]] = 0
-                # self.occupancy_grid[point[0],point[1]] = 1
+                # bres_line = self.bres(origin_px,point)
+                # for point in range(1,len(bres_line)-1):
+                #     self.occupancy_grid[bres_line[point][1],bres_line[point][0]] = 0
+                self.occupancy_grid[point[0],point[1]] = 0
             except:
                 pass
 
         # Apply dilation
+        dilated_occupancy_grid = self.occupancy_grid.copy()
         if rosparam.get_param('dilation'):
             kernel_size = rosparam.get_param('dilation_kernel')
             kernel = np.ones((kernel_size,kernel_size),np.uint8)
-            # dilated_occupancy_grid = ndimage.binary_dilation(self.occupancy_grid,structure=kernel).astype(self.occupancy_grid.dtype)
-            dilated_occupancy_grid = ndimage.median_filter(self.occupancy_grid,size=kernel_size)
-        else:
-            dilated_occupancy_grid = self.occupancy_grid.copy()
-            
-        self.clear_occupancy_grid()
+            # dilated_occupancy_grid = ndimage.median_filter(self.occupancy_grid,size=kernel_size)
+            dilated_occupancy_grid = ndimage.minimum_filter(self.occupancy_grid,size=rosparam.get_param('minfilter_kernel'))
+            dilated_occupancy_grid = ndimage.binary_dilation(dilated_occupancy_grid,structure=kernel).astype(self.occupancy_grid.dtype)
 
         dilated_occupancy_grid*=100
 
@@ -167,8 +185,15 @@ class OccupancyNode():
         occupancy_grid_msg.info.resolution = self.map_resolution
         occupancy_grid_msg.info.width = int(self.map_attributes['width'])
         occupancy_grid_msg.info.height = int(self.map_attributes['height'])
-        occupancy_grid_msg.info.origin.position.x = -self.max_distance
-        occupancy_grid_msg.info.origin.position.y = -self.max_distance
+        
+        if not self.custom_flag:
+            occupancy_grid_msg.info.origin.position.x = -self.max_distance
+            occupancy_grid_msg.info.origin.position.y = -self.max_distance
+
+        else:
+            occupancy_grid_msg.info.origin.position.x = self.map_attributes['origin'][0]
+            occupancy_grid_msg.info.origin.position.y = self.map_attributes['origin'][1]
+
         occupancy_grid_msg.info.origin.position.z = 0
         occupancy_grid_msg.info.origin.orientation.x = 0
         occupancy_grid_msg.info.origin.orientation.y = 0
