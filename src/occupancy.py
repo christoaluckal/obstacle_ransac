@@ -14,7 +14,7 @@ import time
 
 
 @jit(nopython=True)
-def bres(p1,p2,w,h,grid):
+def bres(p1,p2,w,h):
     (y0, x0) = p1
     (y1, x1) = p2
 
@@ -48,7 +48,6 @@ def bres(p1,p2,w,h,grid):
         else:
             line.append((x,y))
 
-        
 
         error = error + deltay
         if error > 0:
@@ -61,13 +60,7 @@ def bres(p1,p2,w,h,grid):
 class OccupancyNode():
     def __init__(self):
         
-        try:
-            self.sub = rospy.Subscriber(rosparam.get_param('scan_topic'), LaserScan, self.scan_callback)
-        except:
-            self.sub = rospy.Subscriber('/car_1/scan', LaserScan, self.scan_callback)
-
-        self.curr_pose = None
-        self.odom_sub = rospy.Subscriber('/car_1/base/odom', Odometry, self.pose_callback)
+        
         self.curr_heading = 0
         self.cartesian_points = None
         self.inlier_list = None
@@ -111,6 +104,16 @@ class OccupancyNode():
         self.occupancy_grid_pub = rospy.Publisher('/local_grid', OccupancyGrid, queue_size=0)
 
         self.occupancy_grid_msg = OccupancyGrid()
+        
+        self.curr_scan = None
+        
+        try:
+            self.sub = rospy.Subscriber(rosparam.get_param('scan_topic'), LaserScan, self.scan_callback)
+        except:
+            self.sub = rospy.Subscriber('/car_1/scan', LaserScan, self.scan_callback)
+
+        self.curr_pose = None
+        self.odom_sub = rospy.Subscriber('/car_1/base/odom', Odometry, self.pose_callback)
 
 
     def xy_to_cell_idx(self,coords):
@@ -185,8 +188,9 @@ class OccupancyNode():
         return [x,y]
 
     def scan_callback(self, msg:LaserScan):
-        if self.curr_pose is None:
-            return
+        if self.curr_scan is None:
+            self.curr_scan = msg
+    
         theta = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges))
         # valid_mask = [np.array(self.curr_scan.ranges) < self.max_distance]
         # polar = np.array(self.curr_scan.ranges)[tuple(valid_mask)]
@@ -219,12 +223,12 @@ class OccupancyNode():
         for point in map_idxs:
             try:
                 # print(point)
-                bres_line = bres(origin_px,point,self.map_attributes['width'],self.map_attributes['height'],self.occupancy_grid )
+                bres_line = bres(origin_px,point,self.map_attributes['width'],self.map_attributes['height'])
                 for p in range(1,len(bres_line)-1):
-                    # if bres_line[p][0] < 0 or bres_line[p][1] < 0:
-                    #     continue
-                    # if bres_line[p][0] >= self.occupancy_grid.shape[0] or bres_line[p][1] >= self.occupancy_grid.shape[1]:
-                    #     continue
+                    if bres_line[p][0] < 0 or bres_line[p][1] < 0:
+                        continue
+                    if bres_line[p][0] >= self.occupancy_grid.shape[0] or bres_line[p][1] >= self.occupancy_grid.shape[1]:
+                        continue
                     self.occupancy_grid[bres_line[p][1],bres_line[p][0]] = 0
 
 
@@ -232,7 +236,7 @@ class OccupancyNode():
                 #     continue
                 # if point[0] >= self.occupancy_grid.shape[0] or point[1] >= self.occupancy_grid.shape[1]:
                 #     continue
-                self.occupancy_grid[point[0],point[1]] = 0
+                # self.occupancy_grid[point[0],point[1]] = 0
             except:
                 pass
         end = time.time()
@@ -298,5 +302,5 @@ if __name__ == '__main__':
     rospy.init_node('local_occupancy_node', anonymous=True)
     node = OccupancyNode()
     print(node.xy_to_cell_idx([0,0]))
-    rate = rospy.Rate(20)
+    rate = rospy.Rate(10)
     rospy.spin()
