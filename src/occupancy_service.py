@@ -12,6 +12,7 @@ from scipy import ndimage
 # from std_msgs.msg import Int8
 from obstacle_ransac.srv import localmap, localmapResponse
 from numba import jit
+import time
 
 @jit(nopython=True)
 def bres(p1,p2,w,h):
@@ -201,15 +202,9 @@ class OccupancyNode():
         origin_px = self.xy_to_cell_idx([0,0])
         map_idxs = np.array([self.xy_to_cell_idx(point) for point in self.cartesian_points])
 
-        car_radius = int(rosparam.get_param('car_radius')/self.map_resolution)
+        
 
-        # self.clear_occupancy_grid()
-        for r in range(-car_radius,car_radius):
-            for c in range(-car_radius,car_radius):
-                if r**2+c**2 <= car_radius**2:
-                    self.occupancy_grid[origin_px[0]+r,origin_px[1]+c] = 0
-
-
+        start = time.time()
         for point in map_idxs:
             try:
                 bres_line = bres(origin_px,point,self.map_attributes['width'],self.map_attributes['height'])
@@ -227,6 +222,12 @@ class OccupancyNode():
                 self.occupancy_grid[point[0]][point[1]] = 0
             except:
                 pass
+        end = time.time()
+        print(f"Time for :{len(map_idxs)} is: {end-start}")
+            
+        car_radius = int(rosparam.get_param('car_radius')/self.map_resolution)
+
+        
 
         # Apply dilation
         dilated_occupancy_grid = self.occupancy_grid.copy()
@@ -238,6 +239,12 @@ class OccupancyNode():
             dilated_occupancy_grid = ndimage.binary_dilation(dilated_occupancy_grid,structure=kernel).astype(self.occupancy_grid.dtype)
 
         dilated_occupancy_grid*=100
+        
+        # self.clear_occupancy_grid()
+        for r in range(-car_radius,car_radius):
+            for c in range(-car_radius,car_radius):
+                if r**2+c**2 <= car_radius**2:
+                    dilated_occupancy_grid[origin_px[0]+r,origin_px[1]+c] = 0
 
         occupancy_grid_msg = OccupancyGrid()
         occupancy_grid_msg.header.stamp = rospy.Time.now()

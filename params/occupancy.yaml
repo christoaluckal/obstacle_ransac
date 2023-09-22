@@ -6,6 +6,6 @@ scan_topic: '/car_1/scan'
 odom_topic: '/car_1/base/odom'
 service_name: 'localmap'
 dilation: True
-dilation_kernel: 1
-minfilter_kernel: 1
+dilation_kernel: 31
+minfilter_kernel: 9
 car_radius: 0.6
